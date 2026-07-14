@@ -1,0 +1,191 @@
+
+#!/usr/bin/env python3
+"""
+indel_visualizer.py
+Google Colab compatible
+
+Usage:
+    python indel_visualizer.py alignment.fasta
+
+If no argument is given, the script looks for alignment.fasta
+in the current directory.
+"""
+
+import os
+import sys
+import csv
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+FLANK = 10
+DPI = 300
+
+COLORS = {
+    "match":"#7CFC7C",
+    "mismatch":"#FFFFFF",
+    "ins":"#6FA8FF",      # gap in reference (insertion in read)
+    "del":"#FF7F7F",      # gap in read (deletion)
+}
+
+def load_alignment(path):
+    seqs=[]
+    names=[]
+    with open(path) as f:
+        name=None
+        s=[]
+        for line in f:
+            line=line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if name is not None:
+                    names.append(name)
+                    seqs.append("".join(s))
+                name=line[1:]
+                s=[]
+            else:
+                s.append(line)
+        if name is not None:
+            names.append(name)
+            seqs.append("".join(s))
+    if len(seqs)!=2:
+        raise ValueError("Alignment FASTA must contain exactly two aligned sequences.")
+    return names,seqs
+
+def analyze(ref,read):
+    matches=mismatches=0
+    ins_bases=del_bases=0
+    ins_events=del_events=0
+    gap_openings=0
+
+    ref_pos=0
+    read_pos=0
+    indels=[]
+
+    i=0
+    while i<len(ref):
+        r=ref[i]
+        q=read[i]
+        if r=="-" and q!="-":
+            gap_openings+=1
+            ins_events+=1
+            start=i
+            l=0
+            while i<len(ref) and ref[i]=="-" and read[i]!="-":
+                l+=1
+                ins_bases+=1
+                i+=1
+            indels.append(("Insertion",start,l))
+            continue
+        elif q=="-" and r!="-":
+            gap_openings+=1
+            del_events+=1
+            start=i
+            l=0
+            while i<len(ref) and read[i]=="-" and ref[i]!="-":
+                l+=1
+                del_bases+=1
+                i+=1
+            indels.append(("Deletion",start,l))
+            continue
+        else:
+            if r==q:
+                matches+=1
+            else:
+                mismatches+=1
+        i+=1
+
+    aligned=len(ref)
+    identity=matches/aligned*100
+    gaps=ins_bases+del_bases
+    gap_pct=gaps/aligned*100
+
+    return {
+        "matches":matches,
+        "mismatches":mismatches,
+        "inserted_bases":ins_bases,
+        "deleted_bases":del_bases,
+        "insertion_events":ins_events,
+        "deletion_events":del_events,
+        "gap_openings":gap_openings,
+        "alignment_length":aligned,
+        "identity":identity,
+        "gap_pct":gap_pct,
+        "indels":indels
+    }
+
+def draw_window(ref,read,start,end,title,outfile):
+    fig,ax=plt.subplots(figsize=(max(10,(end-start)*0.35),2.6))
+    ax.set_xlim(0,end-start)
+    ax.set_ylim(0,2)
+    ax.axis("off")
+
+    # ruler
+    for i in range(start,end):
+        if (i-start)%10==0:
+            ax.text(i-start,1.95,str(i+1),fontsize=6,ha="left")
+
+    for row,seq,y,label in [(0,ref,1.2,"Reference"),(1,read,0.4,"Read")]:
+        ax.text(-2,y,label,fontsize=10,ha="right",family="monospace")
+        for idx,pos in enumerate(range(start,end)):
+            b=seq[pos]
+            if ref[pos]=="-" and read[pos]!="-":
+                c=COLORS["ins"]
+            elif read[pos]=="-" and ref[pos]!="-":
+                c=COLORS["del"]
+            elif ref[pos]==read[pos]:
+                c=COLORS["match"]
+            else:
+                c=COLORS["mismatch"]
+            ax.add_patch(Rectangle((idx,y-0.18),1,0.36,facecolor=c,edgecolor="black",linewidth=0.2))
+            ax.text(idx+0.5,y,b,fontsize=8,ha="center",va="center",family="monospace")
+    plt.title(title,fontsize=11)
+    plt.tight_layout()
+    plt.savefig(outfile,dpi=DPI,bbox_inches="tight")
+    plt.close()
+
+def main():
+    path=sys.argv[1] if len(sys.argv)>1 else "alignment.fasta"
+    names,(ref,read)=load_alignment(path)
+    stats=analyze(ref,read)
+
+    os.makedirs("Output/figures",exist_ok=True)
+
+    with open("Output/alignment_summary.txt","w") as f:
+        for k,v in stats.items():
+            if k!="indels":
+                f.write(f"{k}: {v}\n")
+        # approximate score
+        score=(stats["matches"]*1
+               -stats["mismatches"]*1
+               -stats["gap_openings"]*10
+               -((stats["inserted_bases"]+stats["deleted_bases"]-stats["gap_openings"])*0.5))
+        f.write(f"approx_alignment_score: {score:.2f}\n")
+        f.write("Scoring used: match=+1 mismatch=-1 gapopen=10 gapextend=0.5\n")
+        f.write("NOTE: Exact EMBOSS score may differ depending on Needle settings.\n")
+
+    with open("Output/alignment_statistics.csv","w",newline="") as f:
+        w=csv.writer(f)
+        w.writerow(["Metric","Value"])
+        for k,v in stats.items():
+            if k!="indels":
+                w.writerow([k,v])
+
+    with open("Output/indel_summary.csv","w",newline="") as f:
+        w=csv.writer(f)
+        w.writerow(["Indel_No","Type","Alignment_Position","Length(bp)"])
+        for n,(typ,pos,l) in enumerate(stats["indels"],1):
+            w.writerow([n,typ,pos+1,l])
+            s=max(0,pos-FLANK)
+            e=min(len(ref),pos+l+FLANK)
+            draw_window(ref,read,s,e,
+                        f"{typ} {n} ({l} bp)",
+                        f"Output/figures/indel_{n:03d}_{typ.lower()}_{l}bp.png")
+
+    print("Done.")
+    print("Results written to Output/")
+
+if __name__=="__main__":
+    main()
