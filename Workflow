@@ -1,0 +1,118 @@
+## Workflow
+
+The Indel Visualizer pipeline automatically detects insertions and deletions (indels) from a pairwise sequence alignment in FASTA format and generates summary statistics together with publication-quality visualizations.
+
+```text
+                     Input
+                        │
+                        ▼
+           Pairwise Alignment FASTA
+                        │
+                        ▼
+             Load Reference & Query
+                        │
+                        ▼
+             Validate Input Format
+        (Exactly two aligned sequences)
+                        │
+                        ▼
+         Scan Alignment Position-by-Position
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+        ▼               ▼               ▼
+     Match         Mismatch       Gap Detection
+                                        │
+                          ┌─────────────┴─────────────┐
+                          │                           │
+                          ▼                           ▼
+                    Insertion Detection       Deletion Detection
+                          │                           │
+                          └─────────────┬─────────────┘
+                                        ▼
+                         Calculate Alignment Statistics
+                                        │
+      ┌─────────────────────────────────┼─────────────────────────────────┐
+      │                                 │                                 │
+      ▼                                 ▼                                 ▼
+ Sequence Identity            Gap Percentage              Alignment Score
+ Matches/Mismatches      Inserted & Deleted Bases        Gap Openings
+                                        │
+                                        ▼
+                    Generate Summary Reports
+      ┌─────────────────────────────────┼─────────────────────────────────┐
+      │                                 │                                 │
+      ▼                                 ▼                                 ▼
+alignment_summary.txt      alignment_statistics.csv      indel_summary.csv
+                                        │
+                                        ▼
+                Extract Local Alignment Windows
+                                        │
+                                        ▼
+        Generate Publication-Quality Figures
+                                        │
+                                        ▼
+                        Output Directory
+```
+
+---
+
+## Pipeline Steps
+
+1. Read the aligned FASTA file.
+2. Verify that the file contains exactly two aligned sequences (reference and query).
+3. Compare both sequences position by position.
+4. Detect matches, mismatches, insertions, and deletions.
+5. Count:
+   - Matches
+   - Mismatches
+   - Insertion events
+   - Deletion events
+   - Inserted bases
+   - Deleted bases
+   - Gap openings
+6. Calculate:
+   - Alignment length
+   - Sequence identity (%)
+   - Gap percentage (%)
+   - Approximate alignment score
+7. Generate summary reports in TXT and CSV formats.
+8. Extract a configurable flanking region around each indel.
+9. Produce publication-quality visualization for every insertion and deletion.
+10. Save all reports and figures into the `Output/` directory.
+
+---
+
+## Input
+
+```
+alignment.fasta
+```
+
+The input FASTA file must contain **exactly two aligned sequences**:
+
+```text
+>Reference
+ATCGATCGATCGATCG
+
+>Read
+ATCGAT--ATCGATCG
+```
+
+---
+
+## Output
+
+```text
+Output/
+│
+├── alignment_summary.txt
+├── alignment_statistics.csv
+├── indel_summary.csv
+│
+└── figures/
+    ├── indel_001_insertion_3bp.png
+    ├── indel_002_deletion_5bp.png
+    ├── indel_003_insertion_1bp.png
+    └── ...
+```
